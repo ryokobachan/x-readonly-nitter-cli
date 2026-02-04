@@ -7,7 +7,7 @@ from curl_cffi import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List, Optional, Iterator
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote
 
 from .models import Tweet, User
 from .exceptions import UserNotFoundError, FetchError, ParseError
@@ -29,6 +29,9 @@ class NitterClient:
     """
     
     DEFAULT_INSTANCES = [
+        "https://nitter.moomoo.me",
+        "https://nitter.soopy.moe",
+        "https://nitter.kavin.rocks",
         "https://nitter.net",
         "https://nitter.poast.org",
         "https://nitter.privacydev.net",
@@ -325,6 +328,102 @@ class NitterClient:
                 yield tweet
                 tweets_yielded += 1
 
+    def search_pages(
+        self,
+        query: str,
+        start_cursor: Optional[str] = None,
+        max_pages: Optional[int] = None
+    ) -> Iterator[tuple[List[Tweet], Optional[str]]]:
+        """Search tweets page by page.
+        
+        Args:
+            query: Search query (e.g. "from:user until:2023-01-01")
+            start_cursor: Resume cursor
+            max_pages: Max pages to fetch
+            
+        Yields:
+            (tweets, next_cursor)
+        """
+        cursor = start_cursor
+        pages_fetched = 0
+        
+        while True:
+            if max_pages is not None and pages_fetched >= max_pages:
+                break
+                
+            if pages_fetched > 0:
+                time.sleep(random.uniform(2.0, 5.0))
+
+            # Build Search URL
+            # https://nitter.net/search?f=tweets&q=...&cursor=...
+            # Note: 'f=tweets' is important to show tweets, not users
+            encoded_query = quote(query)
+            if cursor:
+                url = f"{self.instance}/search?f=tweets&q={encoded_query}&cursor={cursor}"
+            else:
+                url = f"{self.instance}/search?f=tweets&q={encoded_query}"
+            
+            try:
+                response = self._make_request(url)
+            except Exception:
+                raise
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            timeline_items = soup.find_all('div', class_='timeline-item')
+            
+            if not timeline_items:
+                break
+            
+            page_tweets = []
+            for item in timeline_items:
+                try:
+                    # In search results, we pass None as expected_username 
+                    # so the parser extracts it from the tweet header
+                    tweet = self._parse_tweet(item, None)
+                    page_tweets.append(tweet)
+                except Exception:
+                    continue
+            
+            # Find next cursor
+            next_cursor = None
+            show_more_divs = soup.find_all('div', class_='show-more')
+            for sm in show_more_divs:
+                link = sm.find('a', href=True)
+                if link and 'Load more' in link.text:
+                    href = link.get('href', '')
+                    if 'cursor=' in href:
+                        next_cursor = href.split('cursor=')[-1]
+                        break
+            
+            yield page_tweets, next_cursor
+            
+            if not next_cursor:
+                break
+                
+            cursor = next_cursor
+            pages_fetched += 1
+
+    def search(
+        self, 
+        query: str, 
+        limit: Optional[int] = None,
+        max_pages: Optional[int] = None
+    ) -> Iterator[Tweet]:
+        """Search tweets as a generator.
+        
+        Args:
+            query: Search query
+            limit: Max tweets
+            max_pages: Max pages
+        """
+        tweets_yielded = 0
+        for page_tweets, _ in self.search_pages(query, max_pages=max_pages):
+            for tweet in page_tweets:
+                if limit is not None and tweets_yielded >= limit:
+                    return
+                yield tweet
+                tweets_yielded += 1
+
     def get_user_tweets(
         self, 
         username: str, 
@@ -333,20 +432,21 @@ class NitterClient:
         retweets: bool = True,
         max_pages: int = 10
     ) -> List[Tweet]:
-        """Fetch tweets as a list (Legacy wrapper)."""
+        """Fetch tweets from a user's timeline (Legacy List version)."""
         return list(self.get_tweets(
-            username, limit, replies, retweets, max_pages
+            username=username,
+            limit=limit,
+            replies=replies,
+            retweets=retweets,
+            max_pages=max_pages
         ))
-    
-    def _parse_tweet(self, item_soup: BeautifulSoup, expected_username: str) -> Tweet:
+
+    def _parse_tweet(self, item_soup: BeautifulSoup, expected_username: Optional[str]) -> Tweet:
         """Parse a single tweet from HTML.
         
         Args:
-            item_soup: BeautifulSoup object of tweet item
-            expected_username: Expected username
-            
-        Returns:
-            Tweet object
+            item_soup: BeautifulSoup element of the tweet
+            expected_username: The username we expect (if known). If None, extract from tweet.
         """
         # Get tweet link for ID
         tweet_link = item_soup.find('a', class_='tweet-link')
