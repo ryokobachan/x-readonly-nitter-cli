@@ -6,7 +6,7 @@ import random
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Iterator
 from urllib.parse import urljoin
 
 from .models import Tweet, User
@@ -207,35 +207,46 @@ class NitterClient:
                 raise
             raise ParseError(f"Failed to parse user profile: {str(e)}")
     
-    def get_user_tweets(
+    def get_tweets(
         self, 
         username: str, 
-        limit: int = 20,
+        limit: Optional[int] = None,
         replies: bool = True,
         retweets: bool = True,
-        max_pages: int = 10
-    ) -> List[Tweet]:
-        """Fetch tweets from a user's timeline.
+        max_pages: Optional[int] = None
+    ) -> Iterator[Tweet]:
+        """Fetch tweets from a user's timeline as a generator.
+        
+        This method yields tweets one by one, allowing for iteration over large
+        datasets without loading everything into memory.
         
         Args:
             username: Twitter username (without @)
-            limit: Maximum number of tweets to fetch (default: 20)
+            limit: Maximum number of tweets to yield (None for infinite/until end)
             replies: Include replies (default: True)
             retweets: Include retweets (default: True)
-            max_pages: Maximum number of pages to fetch (default: 10, each page ~20 tweets)
+            max_pages: Maximum number of pages to fetch (None for infinite)
             
-        Returns:
-            List of Tweet objects
+        Yields:
+            Tweet objects
             
         Raises:
             UserNotFoundError: If user not found
             FetchError: If request fails
         """
-        tweets = []
         cursor = None
+        tweets_yielded = 0
         pages_fetched = 0
         
-        while len(tweets) < limit and pages_fetched < max_pages:
+        while True:
+            # Check page limit if set
+            if max_pages is not None and pages_fetched >= max_pages:
+                break
+                
+            # Check tweet limit if set
+            if limit is not None and tweets_yielded >= limit:
+                break
+
             # Add delay if it's not the first page to respect rate limits
             if pages_fetched > 0:
                 time.sleep(random.uniform(1.5, 3.5))
@@ -258,11 +269,11 @@ class NitterClient:
             timeline_items = soup.find_all('div', class_='timeline-item')
             
             if not timeline_items:
-                # No more tweets available
                 break
             
             for item in timeline_items:
-                if len(tweets) >= limit:
+                # Check tweet limit inside loop
+                if limit is not None and tweets_yielded >= limit:
                     break
                 
                 try:
@@ -274,14 +285,13 @@ class NitterClient:
                     if not retweets and tweet.is_retweet:
                         continue
                     
-                    tweets.append(tweet)
+                    yield tweet
+                    tweets_yielded += 1
                 
                 except Exception:
-                    # Skip tweets that fail to parse
                     continue
             
-            # Find next page cursor - look for "Load more" link specifically
-            # (Page 2+ has both "Load newest" and "Load more" in separate show-more divs)
+            # Find next page cursor
             cursor = None
             show_more_divs = soup.find_all('div', class_='show-more')
             for sm in show_more_divs:
@@ -293,12 +303,37 @@ class NitterClient:
                         break
             
             if not cursor:
-                # No more pages available
                 break
             
             pages_fetched += 1
+
+    def get_user_tweets(
+        self, 
+        username: str, 
+        limit: int = 20,
+        replies: bool = True,
+        retweets: bool = True,
+        max_pages: int = 10
+    ) -> List[Tweet]:
+        """Fetch tweets from a user's timeline (Legacy List version).
         
-        return tweets
+        Args:
+            username: Twitter username (without @)
+            limit: Maximum number of tweets to fetch
+            replies: Include replies
+            retweets: Include retweets
+            max_pages: Maximum number of pages to fetch
+            
+        Returns:
+            List of Tweet objects
+        """
+        return list(self.get_tweets(
+            username=username,
+            limit=limit,
+            replies=replies,
+            retweets=retweets,
+            max_pages=max_pages
+        ))
     
     def _parse_tweet(self, item_soup: BeautifulSoup, expected_username: str) -> Tweet:
         """Parse a single tweet from HTML.

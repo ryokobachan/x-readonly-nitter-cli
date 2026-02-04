@@ -39,19 +39,17 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
     
-    # Example 3: Filter tweets
-    print("\n🔍 Example 3: Filter Tweets (No Retweets/Replies)")
+    # Example 3: Filter tweets (Generator usage)
+    print("\n🔍 Example 3: Filter Tweets (No Retweets/Replies) using Iterator")
     print("-" * 60)
     try:
-        tweets = client.get_user_tweets(
-            "NASA",
-            limit=5,
-            replies=False,
-            retweets=False
-        )
-        for i, tweet in enumerate(tweets, 1):
-            print(f"\n[{i}] {tweet.text[:80]}...")
-            print(f"    Posted: {tweet.date.strftime('%Y-%m-%d %H:%M')}")
+        count = 0
+        for tweet in client.get_tweets("nasa", limit=None, replies=False, retweets=False):
+            print(f"[{count+1}] {tweet.text[:80]}...")
+            print(f"    Posted: {tweet.date.strftime('%Y-%m-%d %H:%M')}\n")
+            count += 1
+            if count >= 5:  # Manual break for demo
+                break
     except Exception as e:
         print(f"Error: {e}")
     
