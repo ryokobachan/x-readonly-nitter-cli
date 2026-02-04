@@ -57,10 +57,8 @@ def generate_periods():
     periods = []
     while current > end_limit:
         until_date = current
-        # Go back ~1 month roughly
-        # simple logic: first day of this month -> minus 1 day -> first day of that month
-        prev_month_end = until_date.replace(day=1) - timedelta(days=1)
-        since_date = prev_month_end.replace(day=1)
+        # Go back 10 days to ensure we capture everything without hitting pagination limits
+        since_date = until_date - timedelta(days=10)
         
         since_str = since_date.strftime('%Y-%m-%d')
         until_str = until_date.strftime('%Y-%m-%d')
@@ -71,43 +69,65 @@ def generate_periods():
         
     return periods
 
+
 def main():
     load_ids()
-    load_ids()
-    # Use auto-selection from updated list
-    client = NitterClient()
+    # STRICTLY use nitter.net as requested
+    client = NitterClient(instance="https://nitter.net")
     
+    # Generate periods
     periods = generate_periods()
-    print(f"Generated {len(periods)} monthly periods to search via Nitter.")
-    print("Starting historical fetch...")
+    print(f"Generated {len(periods)} monthly periods to search via nitter.net.")
+    print("Starting historical fetch with strict rate limiting...")
     
     for i, (since, until) in enumerate(periods):
-        # Nitter search query format
         query = f"from:{USERNAME} since:{since} until:{until}"
         print(f"\n[{i+1}/{len(periods)}] 🔍 Searching: {query}")
         
-        try:
-            total_fetched = 0
-            new_saved = 0
-            
-            # Use search method, no limit
-            for tweet in client.search(query, limit=None, max_pages=None):
-                saved = save_tweets([tweet], query)
-                total_fetched += 1
-                new_saved += saved
+        attempt = 0
+        max_attempts = 5
+        
+        while attempt < max_attempts:
+            try:
+                total_fetched = 0
+                new_saved = 0
                 
-            print(f"   => Found {total_fetched} tweets. Saved {new_saved} new.")
-            
-            # Sleep between periods to be gentle
-            time.sleep(random.uniform(5, 10))
-            
-        except Exception as e:
-            print(f"❌ Error in period {since}~{until}: {e}")
-            if "429" in str(e):
-                print("Rate limited. Sleeping for 60 seconds...")
-                time.sleep(60)
-            else:
-                time.sleep(10)
+                # Fetch
+                for tweet in client.search(query, limit=None, max_pages=None):
+                    saved = save_tweets([tweet], query)
+                    total_fetched += 1
+                    new_saved += saved
+                    
+                    # Be very gentle during fetch loop too
+                    if total_fetched % 10 == 0:
+                        print(f"  .. fetched {total_fetched} tweets")
+                        time.sleep(2)
+                
+                print(f"   => Found {total_fetched} tweets. Saved {new_saved} new.")
+                
+                # Success! Sleep and move to next period
+                time.sleep(random.uniform(10, 20))
+                break
+                
+            except Exception as e:
+                attempt += 1
+                error_msg = str(e)
+                print(f"❌ Error in period {since}~{until} (Attempt {attempt}/{max_attempts}): {error_msg}")
+                
+                if "429" in error_msg:
+                    # Exponential backoff for Rate Limits
+                    # 1st try: 2 min, 2nd: 4 min, 3rd: 8 min...
+                    wait_time = 120 * (2 ** (attempt - 1))
+                    if wait_time > 900: wait_time = 900 # Cap at 15 mins
+                    
+                    print(f"⚠️ RATE LIMITED on nitter.net. Sleeping for {wait_time} seconds ({wait_time/60:.1f} min)...")
+                    # Show countdown or just sleep
+                    time.sleep(wait_time)
+                else:
+                    # Other errors
+                    time.sleep(30)
+        else:
+            print(f"💀 Failed to fetch period {since}~{until} after {max_attempts} attempts. Skipping.")
 
 if __name__ == "__main__":
     main()
