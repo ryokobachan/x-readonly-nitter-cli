@@ -45,21 +45,14 @@ class NitterClient:
         self.timeout = timeout
         
         # Initialize session with impersonate
+        # Rely completely on curl_cffi's impersonate presets to match browser fingerprint
         self.session = requests.Session(impersonate="chrome120")
         
-        # Add only necessary headers that don't conflict with impersonate
-        self.session.headers.update({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Priority': 'u=0, i',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0',
-            'Referer': self.instance + '/',
-        })
+        # Only set Referer dynamically during requests if needed, 
+        # but for now let's trust the default browser behavior or set strictly what's missing.
+        # Actually, adding 'Referer' is good practice for search, but let's keep it minimal first.
+        # We will add Referer in _make_request if needed, or set a base one here.
+        self.session.headers["Referer"] = self.instance + "/"
         
         # Warm up session (get cookies)
         try:
