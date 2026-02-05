@@ -40,6 +40,9 @@ Homepage = "https://github.com/ryokobachan/eneet"
 Repository = "https://github.com/ryokobachan/eneet"
 "Bug Reports" = "https://github.com/ryokobachan/eneet/issues"
 
+[project.scripts]
+eneet = "eneet.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["eneet*"]
