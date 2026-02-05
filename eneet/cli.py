@@ -6,6 +6,7 @@ import os
 import time
 import random
 from datetime import datetime, timedelta
+from typing import List, Optional
 
 from .client import NitterClient
 
@@ -15,20 +16,35 @@ class HistoricalFetcher:
 
     def __init__(
         self,
-        username: str,
+        username: str = None,
+        query: str = None,
         output_file: str = None,
         start_date: datetime = None,
         end_date: datetime = None,
         period_days: int = 10,
         instance: str = "https://nitter.net",
+        filters: List[str] = None,
+        excludes: List[str] = None,
     ):
         self.username = username
-        self.output_file = output_file or f"posts_{username}.jsonl"
+        self.query = query
+        self.output_file = output_file or self._default_output_file()
         self.start_date = start_date
         self.end_date = end_date
         self.period_days = period_days
         self.instance = instance
+        self.filters = filters or []
+        self.excludes = excludes or []
         self.seen_ids = set()
+
+    def _default_output_file(self) -> str:
+        if self.username:
+            return f"posts_{self.username}.jsonl"
+        elif self.query:
+            # Sanitize query for filename
+            safe_query = "".join(c if c.isalnum() else "_" for c in self.query[:30])
+            return f"search_{safe_query}.jsonl"
+        return "posts.jsonl"
 
     def load_existing_ids(self):
         """Load existing IDs from output file."""
@@ -47,10 +63,30 @@ class HistoricalFetcher:
                     pass
         print(f"Loaded {len(self.seen_ids)} existing IDs from {self.output_file}")
 
+    def should_save(self, tweet) -> bool:
+        """Check if tweet passes filter/exclude rules."""
+        text_lower = tweet.text.lower()
+
+        # Check filters (must contain ALL)
+        for f in self.filters:
+            if f.lower() not in text_lower:
+                return False
+
+        # Check excludes (must NOT contain ANY)
+        for e in self.excludes:
+            if e.lower() in text_lower:
+                return False
+
+        return True
+
     def save_tweet(self, tweet) -> int:
-        """Save a single tweet to file. Returns 1 if saved, 0 if duplicate."""
+        """Save a single tweet to file. Returns 1 if saved, 0 if skipped."""
         if not tweet.id or tweet.id in self.seen_ids:
             return 0
+
+        if not self.should_save(tweet):
+            return 0
+
         self.seen_ids.add(tweet.id)
 
         data = {
@@ -135,11 +171,32 @@ class HistoricalFetcher:
 
         return periods
 
+    def build_query(self, since: str, until: str) -> str:
+        """Build search query with date range."""
+        if self.username:
+            base = f"from:{self.username}"
+        elif self.query:
+            base = self.query
+        else:
+            raise ValueError("Either username or query is required")
+
+        return f"{base} since:{since} until:{until}"
+
     def run(self):
         """Run the historical fetch."""
-        print(f"=== Fetching posts for @{self.username} ===")
+        if self.username:
+            print(f"=== Fetching posts for @{self.username} ===")
+        elif self.query:
+            print(f"=== Searching: {self.query} ===")
+
         print(f"Instance: {self.instance}")
         print(f"Output: {self.output_file}")
+
+        if self.filters:
+            print(f"Filters (must contain): {self.filters}")
+        if self.excludes:
+            print(f"Excludes (must NOT contain): {self.excludes}")
+
         print()
 
         self.load_existing_ids()
@@ -154,7 +211,7 @@ class HistoricalFetcher:
         print("Starting fetch...\n")
 
         for i, (since, until) in enumerate(periods):
-            query = f"from:{self.username} since:{since} until:{until}"
+            query = self.build_query(since, until)
             print(f"[{i+1}/{len(periods)}] Searching: {query}")
 
             attempt = 0
@@ -205,14 +262,43 @@ def parse_date(date_str: str) -> datetime:
     return datetime.strptime(date_str, '%Y-%m-%d')
 
 
+def parse_list(value: str) -> List[str]:
+    """Parse comma-separated string to list."""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(',') if v.strip()]
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Fetch historical tweets for a user via Nitter"
+        description="Fetch historical tweets via Nitter",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Fetch all tweets from a user
+  eneet elonmusk --end 2024-01-01
+
+  # Search for keywords
+  eneet -q "bitcoin OR ethereum" --end 2024-01-01
+
+  # Fetch with filters (must contain "AI")
+  eneet elonmusk --filter "AI" --end 2024-01-01
+
+  # Fetch excluding certain words
+  eneet elonmusk --exclude "spam,ad" --end 2024-01-01
+
+  # Use config file
+  eneet -c config.json
+        """
     )
     parser.add_argument(
         "username",
         nargs="?",
         help="Twitter username to fetch (without @)",
+    )
+    parser.add_argument(
+        "-q", "--query",
+        help="Search query (instead of username)",
     )
     parser.add_argument(
         "-c", "--config",
@@ -241,6 +327,14 @@ def main():
         default="https://nitter.net",
         help="Nitter instance URL (default: https://nitter.net)",
     )
+    parser.add_argument(
+        "-f", "--filter",
+        help="Filter: only save tweets containing these words (comma-separated)",
+    )
+    parser.add_argument(
+        "-e", "--exclude",
+        help="Exclude: skip tweets containing these words (comma-separated)",
+    )
 
     args = parser.parse_args()
 
@@ -249,28 +343,38 @@ def main():
         with open(args.config, 'r', encoding='utf-8') as f:
             config = json.load(f)
         username = config.get('username')
+        query = config.get('query')
         start_date = parse_date(config.get('start_date'))
         end_date = parse_date(config.get('end_date'))
         period_days = config.get('period_days', 10)
         instance = config.get('instance', 'https://nitter.net')
-    elif args.username:
+        filters = config.get('filters', [])
+        excludes = config.get('excludes', [])
+        output_file = config.get('output') or args.output
+    else:
         username = args.username
+        query = args.query
         start_date = parse_date(args.start)
         end_date = parse_date(args.end)
         period_days = args.period
         instance = args.instance
-    else:
-        parser.error("Either username or --config is required")
+        filters = parse_list(args.filter)
+        excludes = parse_list(args.exclude)
+        output_file = args.output
 
-    output_file = args.output
+    if not username and not query:
+        parser.error("Either username, --query, or --config is required")
 
     fetcher = HistoricalFetcher(
         username=username,
+        query=query,
         output_file=output_file,
         start_date=start_date,
         end_date=end_date,
         period_days=period_days,
         instance=instance,
+        filters=filters,
+        excludes=excludes,
     )
     fetcher.run()
 
