@@ -70,8 +70,23 @@ def generate_periods():
     return periods
 
 
+COMPLETED_PERIODS_FILE = "completed_periods.txt"
+
+def load_completed_periods():
+    if not os.path.exists(COMPLETED_PERIODS_FILE):
+        return set()
+    with open(COMPLETED_PERIODS_FILE, 'r', encoding='utf-8') as f:
+        return set(line.strip() for line in f if line.strip())
+
+def mark_period_completed(period_str):
+    with open(COMPLETED_PERIODS_FILE, 'a', encoding='utf-8') as f:
+        f.write(period_str + '\n')
+
 def main():
     load_ids()
+    completed_periods = load_completed_periods()
+    print(f"Loaded {len(completed_periods)} completed periods.")
+    
     # STRICTLY use nitter.net as requested
     client = NitterClient(instance="https://nitter.net")
     
@@ -81,6 +96,11 @@ def main():
     print("Starting historical fetch with strict rate limiting...")
     
     for i, (since, until) in enumerate(periods):
+        period_key = f"{since}_{until}"
+        if period_key in completed_periods:
+            print(f"[{i+1}/{len(periods)}] ✅ Skipping completed period: {since} ~ {until}")
+            continue
+
         query = f"from:{USERNAME} since:{since} until:{until}"
         print(f"\n[{i+1}/{len(periods)}] 🔍 Searching: {query}")
         
@@ -105,6 +125,9 @@ def main():
                 
                 print(f"   => Found {total_fetched} tweets. Saved {new_saved} new.")
                 
+                # Mark as completed
+                mark_period_completed(period_key)
+                
                 # Success! Sleep and move to next period
                 time.sleep(random.uniform(10, 20))
                 break
@@ -114,6 +137,7 @@ def main():
                 error_msg = str(e)
                 print(f"❌ Error in period {since}~{until} (Attempt {attempt}/{max_attempts}): {error_msg}")
                 
+                # Check for 429
                 if "429" in error_msg:
                     # Exponential backoff for Rate Limits
                     # 1st try: 30s, 2nd: 60s, 3rd: 120s...
