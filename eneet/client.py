@@ -36,31 +36,29 @@ class NitterClient:
     
     def __init__(self, instance: Optional[str] = None, timeout: int = 20):
         """Initialize Nitter client.
-        
+
         Args:
             instance: Nitter instance URL (default: auto-select from DEFAULT_INSTANCES)
             timeout: Request timeout in seconds (default: 20)
         """
         self.instance = instance or self.DEFAULT_INSTANCES[0]
         self.timeout = timeout
-        
-        # Initialize session with impersonate
-        # Rely completely on curl_cffi's impersonate presets to match browser fingerprint
-        self.session = requests.Session(impersonate="chrome120")
-        
-        # Only set Referer dynamically during requests if needed, 
-        # but for now let's trust the default browser behavior or set strictly what's missing.
-        # Actually, adding 'Referer' is good practice for search, but let's keep it minimal first.
-        # We will add Referer in _make_request if needed, or set a base one here.
+        self._init_session()
+
+    def _init_session(self):
+        """Initialize or reset the HTTP session."""
+        self.session = requests.Session(impersonate="chrome131")
         self.session.headers["Referer"] = self.instance + "/"
-        
+
         # Warm up session (get cookies)
         try:
-            print(f"DEBUG: Warming up session at {self.instance}...")
             self.session.get(self.instance, timeout=10)
-            print("DEBUG: Session warmed up.")
         except Exception as e:
             print(f"WARNING: Failed to warm up session: {e}")
+
+    def reset_session(self):
+        """Reset session to clear any rate limiting state."""
+        self._init_session()
     
     def _make_request(self, url: str) -> requests.Response:
         """Make HTTP request with error handling."""

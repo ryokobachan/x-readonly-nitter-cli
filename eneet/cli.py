@@ -247,10 +247,12 @@ class HistoricalFetcher:
 
                     if "429" in error_msg:
                         wait_time = min(60 * (2 ** (attempt - 1)), 900)
-                        print(f"\n  429 Rate limited ({attempt}/{max_attempts}). Waiting {wait_time}s...")
+                        print(f"\n  429 Rate limited ({attempt}/{max_attempts}): {error_msg}")
+                        print(f"  Resetting session and waiting {wait_time}s...")
+                        client.reset_session()
                         time.sleep(wait_time)
                     else:
-                        print(f"\n  Error ({attempt}/{max_attempts}): {error_msg[:60]}")
+                        print(f"\n  Error ({attempt}/{max_attempts}): {error_msg}")
                         time.sleep(60)
             else:
                 print(f"\n  Failed {since}~{until} after {max_attempts} attempts.")
