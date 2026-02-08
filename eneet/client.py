@@ -348,7 +348,8 @@ class NitterClient:
             # Build Search URL
             # https://nitter.net/search?f=tweets&q=...&cursor=...
             # Note: 'f=tweets' is important to show tweets, not users
-            encoded_query = quote(query)
+            # Keep colons unencoded (Nitter expects from:user not from%3Auser)
+            encoded_query = quote(query, safe=':')
             if cursor:
                 url = f"{self.instance}/search?f=tweets&q={encoded_query}&cursor={cursor}"
             else:
