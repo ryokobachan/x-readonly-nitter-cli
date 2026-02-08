@@ -19,8 +19,8 @@ class HistoricalFetcher:
         username: str = None,
         query: str = None,
         output_file: str = None,
-        start_date: datetime = None,
-        end_date: datetime = None,
+        until_date: datetime = None,
+        since_date: datetime = None,
         period_days: int = 10,
         instance: str = "https://nitter.net",
         filters: List[str] = None,
@@ -29,8 +29,8 @@ class HistoricalFetcher:
         self.username = username
         self.query = query
         self.output_file = output_file or self._default_output_file()
-        self.start_date = start_date
-        self.end_date = end_date
+        self.until_date = until_date
+        self.since_date = since_date
         self.period_days = period_days
         self.instance = instance
         self.filters = filters or []
@@ -133,35 +133,35 @@ class HistoricalFetcher:
         """Generate search periods going backwards."""
         oldest = self.get_oldest_date()
 
-        # Determine start point
-        if self.start_date:
-            current = self.start_date
-            print(f"Using start_date: {self.start_date.strftime('%Y-%m-%d')}")
+        # Determine until point (where to start fetching from)
+        if self.until_date:
+            current = self.until_date
+            print(f"until: {self.until_date.strftime('%Y-%m-%d')}")
         elif oldest:
             next_day = (oldest + timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             current = next_day
             print(f"Oldest existing data: {oldest.strftime('%Y-%m-%d %H:%M')}")
-            print(f"Will fetch until:{current.strftime('%Y-%m-%d')} (exclusive)")
+            print(f"Will fetch until: {current.strftime('%Y-%m-%d')} (exclusive)")
         else:
             current = datetime.now()
             print("No existing data found. Starting from today.")
 
-        # Determine end point
-        end_limit = self.end_date if self.end_date else datetime(1970, 1, 1)
-        if self.end_date:
-            print(f"End limit: {self.end_date.strftime('%Y-%m-%d')}")
+        # Determine since point (where to stop fetching)
+        since_limit = self.since_date if self.since_date else datetime(1970, 1, 1)
+        if self.since_date:
+            print(f"since: {self.since_date.strftime('%Y-%m-%d')}")
         else:
-            print("End limit: unlimited")
+            print("since: unlimited")
 
         periods = []
-        while current > end_limit:
+        while current > since_limit:
             until_date = current
             since_date = until_date - timedelta(days=self.period_days)
 
-            if since_date < end_limit:
-                since_date = end_limit
+            if since_date < since_limit:
+                since_date = since_limit
 
             periods.append((
                 since_date.strftime('%Y-%m-%d'),
@@ -213,6 +213,7 @@ class HistoricalFetcher:
         total_saved = 0
         for i, (since, until) in enumerate(periods):
             query = self.build_query(since, until)
+            search_url = f"{self.instance}/search?f=tweets&q={query.replace(' ', '%20')}"
 
             attempt = 0
             max_attempts = 5
@@ -238,6 +239,7 @@ class HistoricalFetcher:
                     total_saved += cumulative_saved
                     status = f"[{i+1}/{len(periods)}] {since} ~ {until} | done | +{cumulative_saved} (total: {total_saved})"
                     print(f"\r{status:<{status_width}}")
+                    print(f"  URL: {search_url}")
                     time.sleep(random.uniform(15, 25))
                     break
 
@@ -247,7 +249,8 @@ class HistoricalFetcher:
 
                     if "429" in error_msg:
                         wait_time = min(60 * (2 ** (attempt - 1)), 900)
-                        print(f"\n  429 Rate limited ({attempt}/{max_attempts}): {error_msg}")
+                        print(f"\n  429 Rate limited ({attempt}/{max_attempts})")
+                        print(f"  URL: {search_url}")
                         print(f"  Resetting session and waiting {wait_time}s...")
                         client.reset_session()
                         time.sleep(wait_time)
@@ -279,16 +282,16 @@ def main():
         epilog="""
 Examples:
   # Fetch all tweets from a user
-  eneet elonmusk --end 2024-01-01
+  eneet elonmusk --since 2024-01-01
 
   # Search for keywords
-  eneet -q "bitcoin OR ethereum" --end 2024-01-01
+  eneet -q "bitcoin OR ethereum" --since 2024-01-01
 
   # Fetch with filters (must contain "AI")
-  eneet elonmusk --filter "AI" --end 2024-01-01
+  eneet elonmusk --filter "AI" --since 2024-01-01
 
   # Fetch excluding certain words
-  eneet elonmusk --exclude "spam,ad" --end 2024-01-01
+  eneet elonmusk --exclude "spam,ad" --since 2024-01-01
 
   # Use config file
   eneet -c config.json
@@ -312,12 +315,12 @@ Examples:
         help="Output JSONL file (default: posts_{username}.jsonl)",
     )
     parser.add_argument(
-        "--start",
-        help="Start date (YYYY-MM-DD) - fetch from this date backwards",
+        "--until",
+        help="Until date (YYYY-MM-DD) - fetch from this date backwards",
     )
     parser.add_argument(
-        "--end",
-        help="End date (YYYY-MM-DD) - stop fetching at this date",
+        "--since",
+        help="Since date (YYYY-MM-DD) - stop fetching at this date",
     )
     parser.add_argument(
         "--period",
@@ -347,8 +350,8 @@ Examples:
             config = json.load(f)
         username = config.get('username')
         query = config.get('query')
-        start_date = parse_date(config.get('start_date'))
-        end_date = parse_date(config.get('end_date'))
+        until_date = parse_date(config.get('until_date'))
+        since_date = parse_date(config.get('since_date'))
         period_days = config.get('period_days', 10)
         instance = config.get('instance', 'https://nitter.net')
         filters = config.get('filters', [])
@@ -357,8 +360,8 @@ Examples:
     else:
         username = args.username
         query = args.query
-        start_date = parse_date(args.start)
-        end_date = parse_date(args.end)
+        until_date = parse_date(args.until)
+        since_date = parse_date(args.since)
         period_days = args.period
         instance = args.instance
         filters = parse_list(args.filter)
@@ -372,8 +375,8 @@ Examples:
         username=username,
         query=query,
         output_file=output_file,
-        start_date=start_date,
-        end_date=end_date,
+        until_date=until_date,
+        since_date=since_date,
         period_days=period_days,
         instance=instance,
         filters=filters,

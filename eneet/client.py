@@ -47,12 +47,14 @@ class NitterClient:
 
     def _init_session(self):
         """Initialize or reset the HTTP session."""
-        self.session = requests.Session(impersonate="chrome131")
-        self.session.headers["Referer"] = self.instance + "/"
+        # Use Firefox impersonation - Nitter blocks Chrome's TLS fingerprint
+        # but accepts Firefox's. Do NOT override headers.
+        self.session = requests.Session(impersonate="firefox")
 
-        # Warm up session (get cookies)
+        # Brief warm-up to establish connection
         try:
             self.session.get(self.instance, timeout=10)
+            time.sleep(random.uniform(0.5, 1.0))
         except Exception as e:
             print(f"WARNING: Failed to warm up session: {e}")
 
@@ -60,21 +62,48 @@ class NitterClient:
         """Reset session to clear any rate limiting state."""
         self._init_session()
     
-    def _make_request(self, url: str) -> requests.Response:
-        """Make HTTP request with error handling."""
-        try:
-            response = self.session.get(url, timeout=self.timeout)
-            
-            if response.status_code >= 400:
-                if response.status_code == 404:
-                    return response
-                # Include response text for debugging
-                snippet = response.text[:200] if response.text else "No content"
-                raise FetchError(f"HTTP Error {response.status_code} for {url}. Content: {snippet}")
+    def _make_request(self, url: str, max_retries: int = 3) -> requests.Response:
+        """Make HTTP request with error handling and retry logic.
+        
+        Args:
+            url: URL to fetch
+            max_retries: Maximum number of retries for 429 errors
+        """
+        # Note: Do NOT set custom headers here - curl_cffi's impersonate handles them correctly
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.session.get(url, timeout=self.timeout)
                 
-            return response
-        except requests.RequestsError as e:
-            raise FetchError(f"Failed to fetch {url}: {str(e)}")
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        # Exponential backoff with jitter
+                        wait_time = (2 ** attempt) * 5 + random.uniform(1, 5)
+                        print(f"\n429 received for {url}")
+                        print(f"  Waiting {wait_time:.1f}s before retry ({attempt + 1}/{max_retries})...")
+                        time.sleep(wait_time)
+                        # Reset session to get fresh cookies
+                        self._init_session()
+                        continue
+                    else:
+                        snippet = response.text[:200] if response.text else "No content"
+                        raise FetchError(f"HTTP Error 429 for {url}. Content: {snippet}")
+                
+                if response.status_code >= 400:
+                    if response.status_code == 404:
+                        return response
+                    # Include response text for debugging
+                    snippet = response.text[:200] if response.text else "No content"
+                    raise FetchError(f"HTTP Error {response.status_code} for {url}. Content: {snippet}")
+                    
+                return response
+            except requests.RequestsError as e:
+                if attempt < max_retries:
+                    wait_time = (2 ** attempt) * 2 + random.uniform(0.5, 2)
+                    print(f"Request failed, waiting {wait_time:.1f}s before retry ({attempt + 1}/{max_retries})...")
+                    time.sleep(wait_time)
+                    continue
+                raise FetchError(f"Failed to fetch {url}: {str(e)}")
     
     def _parse_date(self, date_str: str) -> Optional[datetime]:
         """Parse Nitter date string to datetime.
@@ -224,9 +253,12 @@ class NitterClient:
             if max_pages is not None and pages_fetched >= max_pages:
                 break
 
-            # Add delay if it's not the first page (or resuming)
-            if pages_fetched > 0 or (start_cursor and pages_fetched == 0):
-                time.sleep(random.uniform(2.0, 5.0)) # Increased delay for safety
+            # Add delay to avoid rate limiting
+            # First page gets shorter delay, subsequent pages get longer delays
+            if pages_fetched == 0:
+                time.sleep(random.uniform(1.0, 2.0))
+            else:
+                time.sleep(random.uniform(5.0, 10.0))
 
             # Build URL
             if cursor:
@@ -338,10 +370,14 @@ class NitterClient:
         while True:
             if max_pages is not None and pages_fetched >= max_pages:
                 break
-                
-            if pages_fetched > 0:
-                # Delay between pages to avoid 429 rate limiting
-                time.sleep(random.uniform(3.0, 6.0))
+            
+            # Delay between pages to avoid 429 rate limiting
+            # First page gets a shorter delay, subsequent pages get longer delays
+            if pages_fetched == 0:
+                time.sleep(random.uniform(1.0, 3.0))
+            else:
+                # Longer delays for pagination to avoid rate limiting
+                time.sleep(random.uniform(5.0, 10.0))
 
             # Build Search URL
             # https://nitter.net/search?f=tweets&q=...&cursor=...
