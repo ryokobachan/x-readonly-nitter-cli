@@ -36,9 +36,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ryokobachan/eneet"
-Repository = "https://github.com/ryokobachan/eneet"
-"Bug Reports" = "https://github.com/ryokobachan/eneet/issues"
+Homepage = "https://github.com/ryokobachan/x-readonly-nitter-cli"
+Repository = "https://github.com/ryokobachan/x-readonly-nitter-cli"
+"Bug Reports" = "https://github.com/ryokobachan/x-readonly-nitter-cli/issues"
 
 [project.scripts]
 eneet = "eneet.cli:main"

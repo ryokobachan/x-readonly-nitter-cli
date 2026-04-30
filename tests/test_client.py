@@ -8,7 +8,7 @@ def test_client_initialization():
     """Test client can be initialized."""
     client = NitterClient()
     assert client.instance is not None
-    assert client.timeout == 10
+    assert client.timeout == 20
 
 
 def test_client_with_custom_instance():

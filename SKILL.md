@@ -1,13 +1,13 @@
 ---
-name: eneet
+name: x-readonly-nitter-cli
 description: Fetch tweets from Twitter/X without API keys using Nitter. Use when the user wants to retrieve tweets, search Twitter posts, collect tweets from a specific user, search by keywords, or analyze tweet data. Works for fetching recent tweets, historical tweets with date filters, or unlimited cursor-based pagination.
 version: 1.0.0
 allowed-tools: Bash(eneet *)
 ---
 
-# Eneet — Tweet Fetcher via Nitter
+# X Read-Only Nitter CLI — Tweet Fetcher via Nitter
 
-`eneet` is a CLI tool for fetching tweets via Nitter (a privacy-respecting Twitter frontend). No API keys required.
+`eneet` is a CLI tool for fetching tweets via Nitter (a privacy-respecting Twitter frontend). No API keys required. The repository is named `x-readonly-nitter-cli`; the installed command remains `eneet`.
 
 ## Installation
 

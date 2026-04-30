@@ -33,7 +33,7 @@ setup(
     description="Nitter API client for fetching tweets without Twitter API",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ryokobachan/eneet",
+    url="https://github.com/ryokobachan/x-readonly-nitter-cli",
     packages=find_packages(exclude=["tests", "tests.*"]),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -51,8 +51,8 @@ setup(
     python_requires=">=3.9",
     install_requires=read_requirements("requirements.txt"),
     project_urls={
-        "Bug Reports": "https://github.com/ryokobachan/eneet/issues",
-        "Source": "https://github.com/ryokobachan/eneet",
+        "Bug Reports": "https://github.com/ryokobachan/x-readonly-nitter-cli/issues",
+        "Source": "https://github.com/ryokobachan/x-readonly-nitter-cli",
     },
     include_package_data=True,
     zip_safe=False,

@@ -1,8 +1,10 @@
-# Eneet
+# X Read-Only Nitter CLI
 
 **Nitter API Client** - Fetch tweets without Twitter API
 
-Eneet is a Python library that allows you to fetch tweets from Twitter/X without using the official Twitter API. It works by scraping Nitter instances (privacy-respecting Twitter frontends).
+X Read-Only Nitter CLI is a Python library that allows you to fetch tweets from Twitter/X without using the official Twitter API. It works by scraping Nitter instances (privacy-respecting Twitter frontends).
+
+The Python package and command name remain `eneet` for compatibility.
 
 ## Features
 
@@ -24,8 +26,8 @@ pip install eneet
 Or install from source:
 
 ```bash
-git clone https://github.com/ryokobachan/eneet.git
-cd eneet
+git clone https://github.com/ryokobachan/x-readonly-nitter-cli.git
+cd x-readonly-nitter-cli
 pip install -e .
 ```
 
@@ -298,7 +300,7 @@ Contributions are welcome! Please feel free to submit pull requests.
 
 ## Support
 
-For issues and feature requests, please visit the [GitHub repository](https://github.com/ryokobachan/eneet/issues).
+For issues and feature requests, please visit the [GitHub repository](https://github.com/ryokobachan/x-readonly-nitter-cli/issues).
 
 ---
 
